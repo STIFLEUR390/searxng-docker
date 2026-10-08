@@ -163,16 +163,26 @@ Variante dédiée : **`docker-compose.dokploy.yml`** (Compose Path
 
 ### Récupération si `settings.yml` existe en dossier
 
-Le premier déploiement a créé un dossier à la place du fichier ? Sur le serveur Dokploy :
+**Diagnostic** : le banner du déploiement doit afficher `Detected: 1 mounts 📂`.
+`0 mounts` = le File Mount n'a **pas** été créé (cause racine de `is a directory`).
+Les variables d'env sont séparées : si `${SEARXNG_BASE_URL:?…}` manquait, l'`up`
+échouerait avant même de créer les conteneurs.
+
+Sur le serveur Dokploy — le volume `../files/settings.yml` se résout par rapport à
+`code/` (là où Dokploy clone le dépôt) :
 
 ```bash
-# localiser le dossier créé par Docker à côté du compose
+# chemin exact pour cette app :
+ls -la /etc/dokploy/compose/ia-searxng-xyud7f/files/settings.yml
+# drwx… = dossier créé par Docker → le supprimer :
+rm -rf /etc/dokploy/compose/ia-searxng-xyud7f/files/settings.yml
+
+# (ou recherche générique)
 find /etc/dokploy -type d -name settings.yml 2>/dev/null
-# le supprimer (ex. : /etc/dokploy/applications/<app>/files/settings.yml)
-rm -rf <chemin_trouvé>
 ```
 
-Puis créer le File Mount (étape 3 ci-dessus) et **Redeployer**.
+Puis : créer le File Mount (étape 3 ci-dessus) **avant** de Redeployer, et vérifier
+que le banner affiche bien **`Detected: 1 mounts 📂`**.
 
 > **Alternative (Méthode 1, recommandée par Dokploy)** : retirer les `labels` du fichier
 > et déclarer le domaine dans l'onglet **Domains** de Dokploy — il injecte les labels
