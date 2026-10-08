@@ -1,0 +1,57 @@
+# Variante Dokploy — Compose Path: ./docker-compose.dokploy.yml
+# Différences avec docker-compose.yml :
+#   - pas de container_name (Dokploy : gêne logs/métriques)
+#   - expose: 8080 au lieu de ports (routage Traefik, rien d'exposé sur le host)
+#   - labels Traefik manuels (Méthode 2) : domaine piloté par SEARXNG_DOMAIN
+#   - config via File Mount Dokploy (../files/settings.yml), jamais ./… :
+#     AutoDeploy re-claonne le dépôt à chaque déploiement, un bind mount venant
+#     du repo serait vidé
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: valkey-server --save 30 1 --loglevel warning
+    restart: unless-stopped
+    volumes:
+      - valkey-data:/data
+    networks:
+      - searxng-net
+
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      # Advanced → Mounts : File Mount "settings.yml" (contenu de searxng/settings.yml)
+      - ../files/settings.yml:/etc/searxng/settings.yml
+      - searxng-data:/var/cache/searxng
+    environment:
+      - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:?SEARXNG_BASE_URL manquant (onglet Environment Dokploy)}
+    depends_on:
+      - valkey
+    networks:
+      - searxng-net
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.searxng-app.rule=Host(`${SEARXNG_DOMAIN:?SEARXNG_DOMAIN manquant (onglet Environment Dokploy)}`)
+      - traefik.http.routers.searxng-app.entrypoints=websecure
+      - traefik.http.routers.searxng-app.tls.certResolver=letsencrypt
+      - traefik.http.services.searxng-app.loadbalancer.server.port=8080
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+        reservations:
+          cpus: '1'
+          memory: 256M
+
+volumes:
+  valkey-data: {}
+  searxng-data: {}
+
+networks:
+  searxng-net: {}
+  dokploy-network:
+    external: true

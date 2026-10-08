@@ -1,13 +1,19 @@
-# SearXNG local + MCP pour agents IA
+# SearXNG local + Dokploy + MCP pour agents IA
 
-Déploiement Docker de **SearXNG** (moteeur de recherche métafédéré, respectueux de la
-vie privée) branché sur **[`@aplix39/searxng-mcp`](https://www.npmjs.com/package/@aplix39/searxng-mcp)**,
-notre serveur [MCP](https://modelcontextprotocol.io) qui expose l'instance aux agents IA
-(Claude, Codex, etc.).
+Déploiement Docker de **SearXNG** (moteur de recherche métafédéré, respectueux de la
+vie privée) utilisé par les agents IA (Claude, Codex, …) via
+**[`@aplix39/searxng-mcp`](https://www.npmjs.com/package/@aplix39/searxng-mcp)**,
+notre serveur [MCP](https://modelcontextprotocol.io).
 
 - Repo du MCP : <https://github.com/STIFLEUR390/searxng-mcp>
 - Paquet npm : <https://www.npmjs.com/package/@aplix39/searxng-mcp>
 - Interface web : <http://localhost:8888>
+
+> **Pourquoi aucun service MCP dans la stack ?** Le paquet n'expose que le transport
+> **stdio** (aucun mode HTTP/SSE — vérifié sur la v1.0.4 : `--help` : « The server
+> communicates over stdio »). Un conteneur ne peut donc pas être joint **en HTTP** par
+> Codex ou Claude Code. C'est l'agent qui lance le MCP en stdio (`npx`), voir
+> [Utiliser le MCP](#utiliser-le-mcp).
 
 ## Services
 
@@ -15,7 +21,6 @@ notre serveur [MCP](https://modelcontextprotocol.io) qui expose l'instance aux a
 |---|---|
 | `searxng` | Le moteur. Port **127.0.0.1:8888** → 8080 dans le conteneur (exposé uniquement en local) |
 | `valkey` | Cache/rate-limiting interne de SearXNG (volume `valkey-data`) |
-| `mcp-searxng` | Serveur MCP stdio : `npx @aplix39/searxng-mcp@1.0.4`, joignable via `http://searxng:8080` (DNS du réseau compose) |
 
 ## Démarrer
 
@@ -50,16 +55,9 @@ justement qu'il faut ajouter ce réglage.
 
 ## Utiliser le MCP
 
-### 1. Depuis Docker (stdio, recommandé si l'agent tourne sur cette machine)
+Le MCP parle **stdio** : aucun service HTTP dans la stack, c'est l'agent qui le lance.
 
-```bash
-docker compose run --rm -i mcp-searxng
-```
-
-Le service tourne en stdio MCP : l'agent attache son stdin/stdout au conteneur,
-`SEARXNG_URL` pointe déjà vers `http://searxng:8080` (réseau interne).
-
-### 2. Directement depuis la machine hôte (npx / bunx)
+### 1. Directement depuis la machine hôte (npx / bunx)
 
 ```bash
 npx -y @aplix39/searxng-mcp --url http://localhost:8888
@@ -67,7 +65,7 @@ npx -y @aplix39/searxng-mcp --url http://localhost:8888
 bunx @aplix39/searxng-mcp --url http://localhost:8888
 ```
 
-### 3. Configuration agent (Claude Desktop / Claude Code / Codex…)
+### 2. Configuration agent (Claude Desktop / Claude Code / Codex…)
 
 ```json
 {
@@ -80,24 +78,11 @@ bunx @aplix39/searxng-mcp --url http://localhost:8888
 }
 ```
 
-Variante Docker (l'agent appelle le conteneur) :
-
-```json
-{
-  "mcpServers": {
-    "searxng": {
-      "command": "docker",
-      "args": ["compose", "-f", "/home/herold/docker/searxng/docker-compose.yml", "run", "--rm", "-i", "mcp-searxng"]
-    }
-  }
-}
-```
-
 ### Variables d'environnement
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `SEARXNG_URL` | `http://localhost:8888` (hôte) / `http://searxng:8080` (compose) | URL de base de l'instance ; le drapeau `--url` l'écrase |
+| `SEARXNG_URL` | `http://localhost:8888` | URL de base de l'instance ; le drapeau `--url` l'écrase |
 | `SEARXNG_TIMEOUT_MS` | `30000` | Timeout HTTP vers SearXNG (500–300000 ms) |
 
 ## Les 7 outils exposés à l'agent
@@ -117,17 +102,56 @@ Exemple d'appel agent :
 > `searxng_search { "q": "bun javascript runtime", "time_range": "week", "limit": 5 }`
 > `searxng_extract_content { "url": "https://bun.sh/", "headings_only": true }`
 
+## Déployer sur Dokploy
+
+Variante dédiée : **`docker-compose.dokploy.yml`** (Compose Path
+`./docker-compose.dokploy.yml`), adaptée aux contraintes Dokploy :
+
+- **pas de `container_name`** (Dokploy : provoque des soucis de logs et de métriques)
+- **`expose: 8080`** au lieu de `ports` : routage par Traefik, rien d'exposé sur le host
+- **labels Traefik manuels** (Méthode 2) : `Host(${SEARXNG_DOMAIN})`, entrypoint
+  `websecure` + certificat Let's Encrypt
+- **`dokploy-network` (externe)** pour que Traefik joigne `searxng` ; `valkey` reste sur
+  le réseau interne `searxng-net` (pas exposé aux autres apps)
+- **config via File Mount** (`../files/settings.yml`) : AutoDeploy re-claonne le dépôt à
+  chaque déploiement, un bind mount `./searxng/…` venant du repo serait vidé
+
+### Étapes
+
+1. **Service → Compose** : Compose Type *Docker Compose*, Compose Path
+   `./docker-compose.dokploy.yml`.
+2. **Onglet Environment** (écrit dans `.env`, interpolé par `${…}` dans le fichier) :
+
+   ```
+   SEARXNG_DOMAIN=search.exemple.org
+   SEARXNG_BASE_URL=https://search.exemple.org/
+   ```
+
+3. **Advanced → Mounts** : créer un *File Mount* `settings.yml` avec le contenu de
+   `searxng/settings.yml`.
+4. **DNS** : enregistrement A `search.exemple.org` → IP du serveur.
+5. **Deploy** — Traefik génère le certificat Let's Encrypt.
+
+> **Alternative (Méthode 1, recommandée par Dokploy)** : retirer les `labels` du fichier
+> et déclarer le domaine dans l'onglet **Domains** de Dokploy — il injecte les labels
+> Traefik lui-même. Ne pas cumuler les deux (routers dupliqués).
+
+> ⚠️ **Sécurité** : sur Dokploy l'instance est **publique**. `server.limiter: false`
+> convient en local uniquement ; pour une instance exposée, envisager
+> `server.limiter: true` (au risque de limiter aussi les appels JSON des agents) ou
+> restreindre l'accès au niveau de Traefik.
+
 ## Mise à jour du MCP
 
-Le service `mcp-searxng` est épinglé sur une version npm. Pour passer à la suivante :
+Le MCP n'est plus épinglé dans `docker-compose.yml` (plus de service compose) : la
+version vit dans la configuration de l'agent. Épinglez-la explicitement dans les `args` :
 
-```bash
-# 1. docker-compose.yml : mettre à jour @aplix39/searxng-mcp@X.Y.Z dans `command:`
-# 2. relancer (npx re-télécharge la nouvelle version dans le cache npm du volume)
-docker compose run --rm -i mcp-searxng
+```json
+"args": ["-y", "@aplix39/searxng-mcp@1.0.4", "--url", "http://localhost:8888"]
 ```
 
-Le cache npm du conteneur est un volume (`npm-cache`), les démarrages suivants sont rapides.
+Vérification : `npx -y @aplix39/searxng-mcp@1.0.4 --version` doit afficher la même
+version (npx met le téléchargement en cache).
 
 ## Dépannage
 
@@ -135,6 +159,8 @@ Le cache npm du conteneur est un volume (`npm-cache`), les démarrages suivants 
 |---|---|
 | `403 … JSON format is probably disabled` | `search.formats` ne contient pas `json` dans `settings.yml` → ajouter, puis `docker compose restart searxng` |
 | `429 … rate limiter` | `server.limiter: true` alors que l'usage est local → `limiter: false` |
-| MCP : `getaddrinfo ENOTFOUND searxng` | Lancement hors du réseau compose → utiliser `--url http://localhost:8888` |
+| MCP : `getaddrinfo ENOTFOUND searxng` | `SEARXNG_URL` pointe vers `http://searxng:8080` (DNS interne compose) alors que l'agent tourne sur l'hôte → forcer `--url http://localhost:8888` |
 | Recherche lente / moteurs en timeout | Normal sur instance locale : les moteurs tiers filent. Réglable via `SEARXNG_TIMEOUT_MS` |
 | `--version` du MCP ≠ version npm | Ne pas arriver : `npm version` rebuild `dist/` et un test garantit la synchro |
+| Dokploy : `SEARXNG_DOMAIN manquant …` | Erreur voulue (`${VAR:?…}`) : définir les variables dans l'onglet **Environment** avant Deploy |
+| Dokploy : `settings.yml is not a valid file` | File Mount absent → Docker a créé un **dossier** à sa place → Advanced → Mounts → créer le fichier `settings.yml` |

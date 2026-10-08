@@ -33,28 +33,9 @@ services:
           cpus: '1'
           memory: 256M
 
-  mcp-searxng:
-    # MCP stdio server — @aplix39/searxng-mcp (npm) branché sur SearXNG via le réseau compose
-    # Docs: https://github.com/STIFLEUR390/searxng-mcp
-    # Profil de ressources optionnel: -f docker-compose.yml -f docker-compose.resources.yml
-    image: node:22-alpine
-    command: npx -y @aplix39/searxng-mcp@1.0.4
-    stdin_open: true
-    volumes:
-      - npm-cache:/root/.npm
-    environment:
-      # DNS interne du réseau compose: le service searxng écoute sur 8080 dans le conteneur
-      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
-      - SEARXNG_TIMEOUT_MS=${SEARXNG_TIMEOUT_MS:-30000}
-    depends_on:
-      - searxng
-    networks:
-      - searxng-net
-
 volumes:
   valkey-data: {}
   searxng-data: {}
-  npm-cache: {}
 
 networks:
   searxng-net: {}
