@@ -127,10 +127,52 @@ Variante dédiée : **`docker-compose.dokploy.yml`** (Compose Path
    SEARXNG_BASE_URL=https://search.exemple.org/
    ```
 
-3. **Advanced → Mounts** : créer un *File Mount* `settings.yml` avec le contenu de
-   `searxng/settings.yml`.
+3. **Advanced → Mounts** : créer un *File Mount* `settings.yml` (contenu ci-dessous,
+   identique à `searxng/settings.yml`) :
+
+   ```yaml
+   # SearXNG — instance pour recherche web des agents IA
+   use_default_settings: true
+
+   server:
+     # secret géré ici (pas de var d'env) ; régénérer: openssl rand -hex 32
+     secret_key: "2ca1a576d97e2bc493f473ad647c7b6b0c1b0758e43a9ff1de736d3b0b9ca036"
+     # instance publique sur Dokploy : passer à true si abuse (voir avertissement ci-dessous)
+     limiter: false
+     image_proxy: true
+
+   search:
+     # json REQUIS pour le MCP (?format=json renverrait 403 sans lui)
+     formats:
+       - html
+       - json
+
+   redis:
+     url: redis://valkey:6379/0
+
+   ui:
+     static_use_cdn: false
+   ```
+
+   ⚠️ **Ordre obligatoire** : Mounts **avant** le premier Deploy. Sinon Docker crée un
+   **dossier** `settings.yml` à la place du fichier (ce qui provoque exactement
+   `cp: … is a directory` → `is not a valid file, exiting…` en boucle).
+
 4. **DNS** : enregistrement A `search.exemple.org` → IP du serveur.
 5. **Deploy** — Traefik génère le certificat Let's Encrypt.
+
+### Récupération si `settings.yml` existe en dossier
+
+Le premier déploiement a créé un dossier à la place du fichier ? Sur le serveur Dokploy :
+
+```bash
+# localiser le dossier créé par Docker à côté du compose
+find /etc/dokploy -type d -name settings.yml 2>/dev/null
+# le supprimer (ex. : /etc/dokploy/applications/<app>/files/settings.yml)
+rm -rf <chemin_trouvé>
+```
+
+Puis créer le File Mount (étape 3 ci-dessus) et **Redeployer**.
 
 > **Alternative (Méthode 1, recommandée par Dokploy)** : retirer les `labels` du fichier
 > et déclarer le domaine dans l'onglet **Domains** de Dokploy — il injecte les labels
