@@ -127,8 +127,9 @@ Variante dédiée : **`docker-compose.dokploy.yml`** (Compose Path
    SEARXNG_BASE_URL=https://search.exemple.org/
    ```
 
-3. **Advanced → Mounts** : créer un *File Mount* `settings.yml` (contenu ci-dessous,
-   identique à `searxng/settings.yml`) :
+3. **Advanced → Volumes** (c'est l'UI *Mounts* de Dokploy, celle qui affiche
+   « No volumes/mounts configured ») : créer un *File Mount* `settings.yml`
+   (contenu ci-dessous, identique à `searxng/settings.yml`) :
 
    ```yaml
    # SearXNG — instance pour recherche web des agents IA
@@ -160,6 +161,16 @@ Variante dédiée : **`docker-compose.dokploy.yml`** (Compose Path
 
 4. **DNS** : enregistrement A `search.exemple.org` → IP du serveur.
 5. **Deploy** — Traefik génère le certificat Let's Encrypt.
+
+### Advanced — réglages Dokploy (Réglages → Advanced)
+
+| Élément de l'UI | Action |
+|---|---|
+| **Run Command** | Laisser la commande par défaut (ne pas override) |
+| **Volumes** | L'UI des mounts — doit afficher **1 mount** (`settings.yml`) après l'étape 3 |
+| **Import** | ⚠️ **Ne jamais cliquer** : efface env vars, mounts et domains existants |
+| **Networks** | `searxng` : **laisser attaché** à `dokploy-network` (Traefik en a besoin) ; `valkey` : **Detach** (sinon les autres apps du réseau joignent Valkey, sans auth) |
+| **Enable Isolated Deployment** | **Désactivé** (obsolète selon l'UI) — le fichier gère déjà ses réseaux : `searxng-net` interne + `dokploy-network` externe |
 
 ### Récupération si `settings.yml` existe en dossier
 
