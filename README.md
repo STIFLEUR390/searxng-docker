@@ -148,7 +148,7 @@ Variante dédiée : **`docker-compose.dokploy.yml`** (Compose Path
        - html
        - json
 
-   redis:
+   valkey:
      url: redis://valkey:6379/0
 
    ui:
