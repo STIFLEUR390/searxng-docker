@@ -1,0 +1,60 @@
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: searxng-valkey
+    command: valkey-server --save 30 1 --loglevel warning
+    restart: unless-stopped
+    volumes:
+      - valkey-data:/data
+    networks:
+      - searxng-net
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+      - searxng-data:/var/cache/searxng
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    depends_on:
+      - valkey
+    networks:
+      - searxng-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+        reservations:
+          cpus: '1'
+          memory: 256M
+
+  mcp-searxng:
+    # MCP stdio server — @aplix39/searxng-mcp (npm) branché sur SearXNG via le réseau compose
+    # Docs: https://github.com/STIFLEUR390/searxng-mcp
+    # Profil de ressources optionnel: -f docker-compose.yml -f docker-compose.resources.yml
+    image: node:22-alpine
+    command: npx -y @aplix39/searxng-mcp@1.0.4
+    stdin_open: true
+    volumes:
+      - npm-cache:/root/.npm
+    environment:
+      # DNS interne du réseau compose: le service searxng écoute sur 8080 dans le conteneur
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      - SEARXNG_TIMEOUT_MS=${SEARXNG_TIMEOUT_MS:-30000}
+    depends_on:
+      - searxng
+    networks:
+      - searxng-net
+
+volumes:
+  valkey-data: {}
+  searxng-data: {}
+  npm-cache: {}
+
+networks:
+  searxng-net: {}

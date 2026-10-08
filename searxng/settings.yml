@@ -1,0 +1,22 @@
+# SearXNG — instance locale pour recherche web des agents IA
+# Docs: https://github.com/searxng/searxng-docker (find-docs /searxng/searxng-docker)
+use_default_settings: true
+
+server:
+  # généré: openssl rand -hex 32
+  secret_key: "2ca1a576d97e2bc493f473ad647c7b6b0c1b0758e43a9ff1de736d3b0b9ca036"
+  # usage local (127.0.0.1 uniquement) -> pas de limiter public
+  limiter: false
+  image_proxy: true
+
+search:
+  # html pour le navigateur, json pour les agents (API ?format=json)
+  formats:
+    - html
+    - json
+
+redis:
+  url: redis://valkey:6379/0
+
+ui:
+  static_use_cdn: false
